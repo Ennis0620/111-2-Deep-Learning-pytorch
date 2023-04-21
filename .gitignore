@@ -4,3 +4,7 @@
 /hw1_cifar10/pytorch/cifar10
 /hw1_cifar10/pytorch/data
 /hw1_cifar10/pytorch/model_weight
+/hw2_IMDB/weights
+/hw2_IMDB/glove.6B.100d.txt
+/TermProject/traindata
+/TermProject/uw-madison-gi-tract-image-segmentation.zip
