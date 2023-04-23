@@ -6,7 +6,7 @@ import statistics
 import numpy as np
 import torch.nn as nn
 from early_stop import early_stop
-from model import RNN_IMDB
+from model import RNN_IMDB,LSTM_IMDB,RNN2_IMDB,LSTM2_IMDB,GRU_IMDB,GRU2_IMDB,RNN_IMDB_BCE
 import matplotlib.pyplot as plt
 from dataset_train import dataset
 from torch.utils.data import DataLoader
@@ -45,15 +45,14 @@ def replace_w2v(w2v_dicts:dict,
     return_list = []
     string = str(string)
     string_split = string.split()
-    no_mapping = 0
+
     for word in string_split:
         #print('per word:',word)
         if word in w2v_dicts:
             return_list.append(w2v_dicts[word])
         else:
             return_list.append(w2v_dicts_mean)
-            no_mapping += 1
-            print(no_mapping)
+            
         #確保在test階段load資料時seq長度不超過訓練時的長度
         if len(return_list)>= seg_len:
             return return_list
@@ -150,9 +149,9 @@ def train(train_loader,
         for data,label in tqdm.tqdm(train_loader):
             #確保每一batch都能進入model.train模式
             model.train()
-            #放置gpu訓練            
+            #放置gpu訓練   
             data = data.to(device)
-            label = label.type(torch.LongTensor)
+            label = label.type(torch.LongTensor)#CE LOSS
             label = label.to(device)
             out = model(data)
             loss = loss_func(out,label)
@@ -163,7 +162,7 @@ def train(train_loader,
             #累加每個batch的loss後續再除step數量
             train_avg_loss += loss.item()
             #計算acc
-            train_p = out.argmax(dim=1)                 #取得預測的最大值
+            train_p = out.argmax(dim=1)                 #CE LOSS取得預測的最大值
             num_correct = (train_p==label).sum().item() #該batch在train時預測成功的數量
             batch_acc  = num_correct / label.size(0)
             total_acc += batch_acc
@@ -214,13 +213,13 @@ def valid(valid_loader,
     with torch.no_grad():
         for data, label in valid_loader:
             data = data.to(device)
-            label = label.type(torch.LongTensor)
+            label = label.type(torch.LongTensor)#CE LOSS
             label = label.to(device)
             out = model(data)
             loss = loss_func(out,label)
             #累加每個batch的loss後續再除step數量
             val_avg_loss += loss.item()
-            valid_p = out.argmax(dim=1)   
+            valid_p = out.argmax(dim=1) #CE LOSS  
             num_correct = (valid_p==label).sum().item() #該batch在train時預測成功的數量   
             batch_acc  = num_correct / label.size(0)
             total_acc += batch_acc
@@ -237,7 +236,9 @@ def plot_statistics(train_loss,
     '''
     統計train、valid的loss、acc
     '''
-    
+    fig, ax = plt.subplots()
+    epcoh = [x for x in range(len(train_loss))]
+    '''
     t_loss = plt.plot(train_loss)
     t_acc = plt.plot(train_acc)
     v_loss = plt.plot(valid_loss)
@@ -248,6 +249,17 @@ def plot_statistics(train_loss,
                         'train_acc',
                         'valid_loss',
                         'valid_acc'])
+    '''
+    ax2 = ax.twinx()
+    t_loss = ax.plot(train_loss,color='green',label='train_loss')
+    v_loss = ax.plot(valid_loss,color='red',label='valid_loss')
+    t_acc = ax2.plot(train_acc,color='#00FF55',label='train_acc')
+    v_acc = ax2.plot(valid_acc,color='#FF5500',label='valid_acc')
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("loss")
+    ax2.set_ylabel("acc")
+    ax.legend(loc='upper left')
+    ax2.legend(loc='upper right')
     plt.savefig(f'{SAVE_MODELS_PATH}/train_statistics',bbox_inches='tight')
     plt.figure()
 
@@ -258,23 +270,23 @@ if __name__ == "__main__":
     STOP_WORD_PATH = f'{CURRENT_PATH}/stop_words_english.txt'
     PREPOCESS_TRAIN_PATH = f'{CURRENT_PATH}/data/preprocess_train.csv'
     
-    SAVE_MODELS_PATH = f'{CURRENT_PATH}/weights/rnn'
-    seq_len = 130
-    hidden_size = 64
+    SAVE_MODELS_PATH = f'{CURRENT_PATH}/weights/GRU2'
+    seq_len = 180
+    hidden_size = 128
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    MODEL = RNN_IMDB(hidden_size=hidden_size,
+    MODEL = GRU_IMDB(hidden_size=hidden_size,
                      embedding_dim=100,
-                     num_classes=2).to(device=device)
+                     num_classes=2,
+                     num_layers=2).to(device=device)
     EPOCH = 1000
     BATCH_SIZE = 512
     LOSS = nn.CrossEntropyLoss()
     LEARNING_RATE = 0.001
     OPTIMIZER = torch.optim.Adam(MODEL.parameters(), lr=LEARNING_RATE)
-
     EARLY_STOP = early_stop(save_path=SAVE_MODELS_PATH,
                         mode='max',
                         monitor='val_acc',
-                        patience=15)
+                        patience=10)
     
     
     if os.path.exists(PREPOCESS_TRAIN_PATH):
@@ -297,7 +309,19 @@ if __name__ == "__main__":
         print('review 數量分布:',sorted(review_len_seperate.items(), key=lambda item: item[1]))
         print('review 平均數:',(mean_review_len//len(train_csv))+1)#平均數
         print('review 中位數:',statistics.median(review_len_seperate))#中位數
-        
+        '''
+        train_csv["len"] = train_csv["review"].apply(lambda n: len(n.split()))
+print(train_csv.head())
+        train_csv["len"].describe()
+
+        keys = list(review_len_seperate.keys())
+        values = list(review_len_seperate.values())
+        plt.bar(keys,values)
+        plt.xlabel("seq_len")
+        plt.ylabel("counts")
+        plt.yscale('log')
+        plt.show()
+        '''
         try:
             os.remove(f'{CURRENT_PATH}/category2num.txt')
         except:
@@ -372,6 +396,8 @@ if __name__ == "__main__":
     new_valid_tokenize_string = new_valid_tokenize_string[valid_indices]
     new_valid_labels = new_valid_labels[valid_indices]
 
+    #final retrain whole
+    #train_data = [np.append(new_train_tokenize_string,new_valid_tokenize_string),np.append(new_train_labels,new_valid_labels)]
     train_data = [new_train_tokenize_string,new_train_labels]
     valid_data = [new_valid_tokenize_string,new_valid_labels]
 
